@@ -1,12 +1,3 @@
-/******************************
-Este script genera un DataFrame con las columnas apropiadas
-para poder realizar el entrenamiento de modelos de Machine Learning
-a partir de los datos cifrados del fichero data.csv (no incluido)
-
-Debe ejecutarse sobre Spark 2.1.0
-
-*******************************/
-
 // Start a simple Spark Session
 import org.apache.spark.sql.SparkSession
 import scala.collection.mutable.ListBuffer
@@ -17,20 +8,20 @@ val df = spark.read.option("header","true").option("inferSchema","true").option(
 
 
 // Distinct IDs
-val nID = df.groupBy("ID").count().count
+val nID = df.select("ID").distinct.count
 
 // Numero de registros totales
 val nReg = df.count
 
 // Distinct IDs without last register (clousure register)
 val df2 = df.filter(($"Status" !== "Resolved  (4)") && ($"Status" !== "Cancelled  (6)"))
-val nID_filt = df2.groupBy("ID").count().count
+val nID_filt = df2.select("ID").distinct.count
 
 // Creamos la variable que almacenara una lista de tuplas de la forma (Nombre de columna, % de constancia, % de nulos)
 val b : ListBuffer[(String, Double, Double)] = ListBuffer()
 
-// Creamos la lista dinamica
-for( i <- df2.columns.drop(2)) b += ((i, df2.groupBy("ID", i).count().groupBy("ID").count().filter($"count" === 1).count.toDouble/nID_filt, (df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
+// Damos valores a la lista dinamica
+for( i <- df2.columns.drop(2)) b += ((i, df2.select("ID", i).distinct.groupBy("ID").count.filter($"count" === 1).count.toDouble/nID_filt, (df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
 
 // La pasamos a lista estatica
 val ColumnasSeleccionadas = b.toList

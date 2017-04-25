@@ -19,6 +19,9 @@ project/plugins/project/
 # custom
 .hidden/*
 *.csv
+*.crc
+_SUCCESS
 metastore_db/*
+*/metastore_db/*
 *.lst
 *.rep

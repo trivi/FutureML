@@ -1,7 +1,24 @@
-// Start a simple Spark Session
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the LICENSE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import org.apache.spark.sql.SparkSession
 import scala.collection.mutable.ArrayBuffer
 import org.apache.spark.sql.types._
+import java.io._
 
 // Create DataFrame and read csv
 val spark = SparkSession.builder().getOrCreate()
@@ -11,31 +28,34 @@ val df = spark.read.option("header","true").option("inferSchema","true").option(
 // Distinct IDs
 val nID = df.select("ID").distinct.count
 
-// Numero de registros totales
+// Total registers
 val nReg = df.count
 
 // Distinct IDs without last register (clousure register)
 val df2 = df.filter(($"Status" !== "Resolved  (4)") && ($"Status" !== "Cancelled  (6)"))
 val nID_filt = df2.select("ID").distinct.count
 
-// Creamos la variable que almacenara una lista de tuplas de la forma (Nombre de columna, % de constancia, % de nulos)
+// Creamos la variable que almacenara una lista de tuplas de la forma (column name, constancy ratio, nulls ratio)
 val b : ArrayBuffer[(String, Double, Double)] = ArrayBuffer()
 
-// Damos valores a la lista dinamica
-for( i <- df2.columns.drop(2)) b += ((i, df2.select("ID", i).distinct.groupBy("ID").count.filter($"count" === 1).count.toDouble/nID_filt, (df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
+// Damos valores a la lista dinamica (teniendo en cuenta que "t9jZkpJT4Nc=" equivale a null)
+for( i <- df2.columns.drop(2)) b += (( i,
+										df2.select("ID", i).distinct.groupBy("ID").count.filter($"count" === 1).count.toDouble/nID_filt,
+										(df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
 
 // La pasamos a lista estatica
-val ColumnasSeleccionadas = b.toArray
+val RatiosColumnas = b.toArray
 
 // Visualizacion ordenada de los datos extraidos
-//for ( i <- ColumnasSeleccionadas ) println(i)
+//for ( i <- RatiosColumnas ) println(i)
 
 // Seleccionamos los limites para el % de constancia y de % de nulos (mínimo y máximo respectivamente)
 val Lim_Const = 0.8
 val Lim_nulls = 0.5
 
 // Seleccionamos manualmente las columnas cuyo dato es el objetivo de la prediccion (targets)
-val ColumnasObjetivo = Array("Closure Product Category Tier3", "Assigned Group")
+//val ColumnasLabel = Array("Closure Product Category Tier3", "Assigned Group")
+val ColumnasLabel = Array("Assigned Group")
 
 // Copiamos el DataFrame para irlo reduciendo progresivamente (aprovechamos para eliminar la fecha)
 var df_reducido = df.drop("DATE")
@@ -44,10 +64,10 @@ var df_reducido = df.drop("DATE")
 var ColumnasEntrada = ArrayBuffer[String]()
 
 // Eliminamos las columnas que no superen el criterio (dejamos aún la columna "ID")
-for ( i <- ColumnasSeleccionadas ) {
+for ( i <- RatiosColumnas ) {
 	// testeamos si hay que conservar la columna por ser target
 	var aux = false
-	for ( j <- ColumnasObjetivo ) {
+	for ( j <- ColumnasLabel ) {
 		if ( i._1 == j ) aux = true;
 	}
 	// Comprobamos si hay que conservar la columna a pesar de los criterios de Lim_Const y Lim_nulls
@@ -57,9 +77,9 @@ for ( i <- ColumnasSeleccionadas ) {
 	}else ColumnasEntrada += i._1
 }
 
-// Generamos el map necesario para seleccionar los valores del primer y 
+// Generamos el map necesario para seleccionar los valores del primer y
 // último registro según si es dato de entrada u objetivo respectivamente
-val map_columns = (ColumnasEntrada.map( _ -> "first") ++ ColumnasObjetivo.map( _ -> "last")).toMap
+val map_columns = (ColumnasEntrada.map( _ -> "first") ++ ColumnasLabel.map( _ -> "last")).toMap
 
 // Generamos el DataFrame con las reducciones apropiadas según el Map anterior
 // y eliminamos la columna ID que ya no aporta información
@@ -73,11 +93,25 @@ val mySortedCols = df_combinado.columns.sorted.map(str => col(str))
 val df_CombinadoSorted = df_combinado.select(mySortedCols:_*)
 
 
-
+/**********RECUPERAMOS LOS NOMBRES ORIGINALES DE LAS COLUMNAS**************/
 var df_tmp = df_CombinadoSorted	// DataFrame para ir modificando
+
+for ( i <- df_reducido.columns.diff(Array("ID")) ) {
+	if ( ColumnasLabel.contains(i) ) {
+		val lastStr = "last(" ++ i ++ ")"
+		df_tmp = df_tmp.withColumnRenamed(lastStr, i)
+	} else {
+		val firstStr = "first(" ++ i ++ ")"
+		df_tmp = df_tmp.withColumnRenamed(firstStr, i)
+	}
+}
+/**************************************************************************/
+
+
+
 // Seleccionamos la diferentes columnas según el tipo de datos almacenados (para su procesamiento apropiado)
-val ColConNumeros = Array("first(Urgency)", "first(Impact)", "first(Priority)")
-val ColNumericas = Array("first(Priority Weight)")
+val ColConNumeros = Array("Urgency", "Impact", "Priority")
+val ColNumericas = Array("Priority Weight")
 val ColString = df_tmp.columns.diff(ColConNumeros).diff(ColNumericas)
 
 // Hacemos nulos los valores con el Hash que sabemos que es equivalente "t9jZkpJT4Nc="
@@ -90,13 +124,13 @@ val findNumber = udf {columna: String => numPattern.findFirstIn(columna).getOrEl
 
 for  (columna <- ColConNumeros) df_tmp = df_tmp.withColumn(columna, when(df_tmp(columna).isNull, lit(null)).otherwise(findNumber(df_tmp(columna))))
 
-// Pasamos a entero la columna "first(Priority Weight)" que ya era "numerica" y las nuevas extraidas de los campos alfanumericos
+// Pasamos a entero la columna "Priority Weight" que ya era "numerica" y las nuevas extraidas de los campos alfanumericos
 for (i <- (ColConNumeros ++ ColNumericas) ) df_tmp = df_tmp.withColumn( i, df_tmp(i).cast(IntegerType) )
 
 
-// Creamos un array único para todos los valores 
+/********************** Creamos un array único para todos los valores ********************************/
 var valoresPosibles = Array[String]()
-for ( i <- ColString ) valoresPosibles = valoresPosibles ++ df_tmp.select(i).filter(df_tmp(i).isNotNull).distinct.collect.map(_.getString(0))
+for ( i <- ColString ) valoresPosibles ++= df_tmp.select(i).filter(df_tmp(i).isNotNull).distinct.collect.map(_.getString(0))
 valoresPosibles = valoresPosibles.distinct
 
 // Esta funcion reemplaza el String por la posicion que ocupa (el indice) dentro del vector (+1 para evitar el 0)
@@ -106,7 +140,60 @@ for (columna <- ColString) df_tmp = df_tmp.withColumn(columna, when(df_tmp(colum
 
 
 
+/******************SAVING RESULTS TO CSV FILE***************/
+df_tmp.write.format("com.databricks.spark.csv").option("header","true").save("dataML")
+/***********************************************************/
+
+/************SAVING THE NUMBER OF REGISTERS PER ASSIGNED GROUPS ***************/
+val df_NGrupos = ( df.select("ID","Assigned Group").filter(df("Assigned Group").isNotNull)
+.filter(df("Assigned Group") !== "t9jZkpJT4Nc=" ).groupBy("ID","Assigned Group")
+.count.groupBy("ID").count.withColumnRenamed("count", "n_cambios")
+.groupBy("n_cambios").count.sort("n_cambios") )
+
+df_NGrupos.coalesce(1).write.format("com.databricks.spark.csv").option("header","true").save("n_groups")
+/******************************************************************************/
+
+/***********AÑADIMOS EL CALCULO DE LA EFECTIVIDAD VISTA EN LA ASIGNACION DE LOS VALORES OBJETIVO EN LOS DATOS DE ENTRADA************/
+// Generamos el map necesario para seleccionar los valores del primer y
+// último registro de las columnas objetivo
+/****Fallo en interpretacion de los datos detectado (no longer used)****/
+//
+//val map_firstObjetivo = (ColumnasLabel.map( _ -> "first")).toMap
+//val map_lastObjetivo = (ColumnasLabel.map( _ -> "last")).toMap
+//
+//// Generamos el DataFrame con las reducciones apropiadas según el Map anterior
+//// y eliminamos la columna ID que ya no aporta información
+//val df_firstObjetivo = df_reducido.groupBy("ID").agg(map_firstObjetivo)
+//val df_lastObjetivo = df_reducido.groupBy("ID").agg(map_lastObjetivo)
+//
+//val df_colObjetivo = df_firstObjetivo.join(df_lastObjetivo, df_firstObjetivo("ID") === df_lastObjetivo("ID")).drop("ID")
+//
+////Abrimos el fichero donde se guardaran los datos
+//val pw = new PrintWriter(new File("Efectividad_original.txt" ))
+//var result = 0.0
+//
+//// Calculamos el porcentaje de acierto para cada columna objetivo y lo grabamos en un fichero
+//for ( i <- ColumnasLabel ) {
+//	val firstStr = "first(" ++ i ++ ")"
+//	val lastStr = "last(" ++ i ++ ")"
+//	println(i)
+//	pw.write(i ++ "\n")
+//	result = df_colObjetivo.select(firstStr, lastStr).filter(df_colObjetivo(lastStr) === df_colObjetivo(firstStr)).count.toDouble/df_colObjetivo.count
+//	println(result)
+//	pw.write(result.toString)
+//	pw.write("\n\n")
+//}
+//
+//// Cerramos el fichero
+//pw.close
+//
+/***********************************************************************************************************************************/
 
 
-
-
+/*********Test para comprobar que algunas variables se conservan correctamente*************/
+//for ( i <- df_tmp.columns ) {
+//println(i)
+//println(df_tmp.select(i).distinct.count, df_tmp.filter(df_tmp(i).isNull).count, df_tmp.filter(df_tmp(i) === "t9jZkpJT4Nc=").count)
+//println(df_CombinadoSorted.select(i).distinct.count, df_tmp.filter(df_CombinadoSorted(i).isNull).count, df_tmp.filter(df_CombinadoSorted(i) === "t9jZkpJT4Nc=").count)
+//}
+/******************************************************************************************/

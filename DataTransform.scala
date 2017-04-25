@@ -40,8 +40,8 @@ val b : ArrayBuffer[(String, Double, Double)] = ArrayBuffer()
 
 // Damos valores a la lista dinamica (teniendo en cuenta que "t9jZkpJT4Nc=" equivale a null)
 for( i <- df2.columns.drop(2)) b += (( i,
-										df2.select("ID", i).distinct.groupBy("ID").count.filter($"count" === 1).count.toDouble/nID_filt,
-										(df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
+		df2.select("ID", i).distinct.groupBy("ID").count.filter($"count" === 1).count.toDouble/nID_filt,
+		(df.filter(df(i).isNull).count + df.filter(df(i) === "t9jZkpJT4Nc=").count).toDouble/nReg))
 
 // La pasamos a lista estatica
 val RatiosColumnas = b.toArray
@@ -153,47 +153,4 @@ val df_NGrupos = ( df.select("ID","Assigned Group").filter(df("Assigned Group").
 df_NGrupos.coalesce(1).write.format("com.databricks.spark.csv").option("header","true").save("n_groups")
 /******************************************************************************/
 
-/***********AÑADIMOS EL CALCULO DE LA EFECTIVIDAD VISTA EN LA ASIGNACION DE LOS VALORES OBJETIVO EN LOS DATOS DE ENTRADA************/
-// Generamos el map necesario para seleccionar los valores del primer y
-// último registro de las columnas objetivo
-/****Fallo en interpretacion de los datos detectado (no longer used)****/
-//
-//val map_firstObjetivo = (ColumnasLabel.map( _ -> "first")).toMap
-//val map_lastObjetivo = (ColumnasLabel.map( _ -> "last")).toMap
-//
-//// Generamos el DataFrame con las reducciones apropiadas según el Map anterior
-//// y eliminamos la columna ID que ya no aporta información
-//val df_firstObjetivo = df_reducido.groupBy("ID").agg(map_firstObjetivo)
-//val df_lastObjetivo = df_reducido.groupBy("ID").agg(map_lastObjetivo)
-//
-//val df_colObjetivo = df_firstObjetivo.join(df_lastObjetivo, df_firstObjetivo("ID") === df_lastObjetivo("ID")).drop("ID")
-//
-////Abrimos el fichero donde se guardaran los datos
-//val pw = new PrintWriter(new File("Efectividad_original.txt" ))
-//var result = 0.0
-//
-//// Calculamos el porcentaje de acierto para cada columna objetivo y lo grabamos en un fichero
-//for ( i <- ColumnasLabel ) {
-//	val firstStr = "first(" ++ i ++ ")"
-//	val lastStr = "last(" ++ i ++ ")"
-//	println(i)
-//	pw.write(i ++ "\n")
-//	result = df_colObjetivo.select(firstStr, lastStr).filter(df_colObjetivo(lastStr) === df_colObjetivo(firstStr)).count.toDouble/df_colObjetivo.count
-//	println(result)
-//	pw.write(result.toString)
-//	pw.write("\n\n")
-//}
-//
-//// Cerramos el fichero
-//pw.close
-//
-/***********************************************************************************************************************************/
 
-
-/*********Test para comprobar que algunas variables se conservan correctamente*************/
-//for ( i <- df_tmp.columns ) {
-//println(i)
-//println(df_tmp.select(i).distinct.count, df_tmp.filter(df_tmp(i).isNull).count, df_tmp.filter(df_tmp(i) === "t9jZkpJT4Nc=").count)
-//println(df_CombinadoSorted.select(i).distinct.count, df_tmp.filter(df_CombinadoSorted(i).isNull).count, df_tmp.filter(df_CombinadoSorted(i) === "t9jZkpJT4Nc=").count)
-//}
-/******************************************************************************************/

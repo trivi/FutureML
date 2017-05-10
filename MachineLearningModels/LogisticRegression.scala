@@ -105,7 +105,7 @@ for ( SelectedLabel <- ColumnsLabel ) {
 
   /************************CONTAR LOS CAMBIOS DE GRUPO NECESARIOS PARA ACERTAR*********************************/
   // Creamos una udf que nos devuelva en qué número de intento se asigna el grupo correcto
-  val toarray = udf {( p : org.apache.spark.ml.linalg.Vector, l : Double ) =>
+  val steps = udf {( p : org.apache.spark.ml.linalg.Vector, l : Double ) =>
     val array = p.toArray
     val indexArray = array.map(_.toDouble)
     val sortedArray = indexArray.sorted.reverse
@@ -117,7 +117,7 @@ for ( SelectedLabel <- ColumnsLabel ) {
   // Generamos la columna correspondiente al número de grupos asignados para cada registro
   // y luego los agrupamos por ese valor y los contamos
   val n_assign = ( predictions.select("indexedLabel", "probability","prediction")
-  .withColumn("Groups_assigned", toarray(predictions("probability"),predictions("indexedLabel")))
+  .withColumn("Groups_assigned", steps(predictions("probability"),predictions("indexedLabel")))
   .groupBy("Groups_assigned").count().sort("Groups_assigned") )
 
   // Lo salvamos a un fichero csv
